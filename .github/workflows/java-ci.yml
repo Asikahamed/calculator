@@ -73,6 +73,14 @@ on:
         default: '.'
         type: string
 
+    secrets:
+      DOCKER_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKER_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
+
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   build:
     name: Build (compile & package)
