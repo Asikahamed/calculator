@@ -150,15 +150,18 @@ jobs:
         run: |
           set -euo pipefail
           PP="$GITHUB_WORKSPACE/${{ inputs.project_path }}"
-          JAR=$(find "$PP" -type f -name "*.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" ! -name "*plain.jar" 2>/dev/null | head -n1 || true)
+          RAW_JAR=$(find "$PP" -type f -name "*.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" ! -name "*plain.jar" 2>/dev/null | head -n1 || true)
           
-          if [ -n "$JAR" ]; then
-            echo "artifact=$JAR" >> $GITHUB_OUTPUT
-            echo "Found compiled artifact target: $JAR"
+          if [ -n "$RAW_JAR" ]; then
+            # Clean up path by removing dots (./) and converting to absolute canonical path
+            CLEAN_JAR=$(readlink -f "$RAW_JAR")
+            echo "artifact=$CLEAN_JAR" >> $GITHUB_OUTPUT
+            echo "Found compiled artifact target: $CLEAN_JAR"
           else
             echo "artifact=" >> $GITHUB_OUTPUT
             echo "No valid deployment JAR discovered."
           fi
+
 
       - name: Upload test reports
         if: ${{ inputs.run_tests == true && always() }}
