@@ -221,7 +221,6 @@ jobs:
           else
             echo "Dockerfile not found at $DF. Constructing fallback configuration."
             
-            # Read from downloaded folder context directly
             JARFILE=$(find "$CTX" -name "*.jar" 2>/dev/null | head -n1 || true)
             
             if [ -z "$JARFILE" ]; then
@@ -231,13 +230,24 @@ jobs:
             
             BASENAME=$(basename "$JARFILE")
             
+            # 🚀 UPDATED: Installs the required libxext, libxrender, and libxtst graphics dependencies
             cat > "$CTX/Dockerfile" <<EOF
           FROM eclipse-temurin:${{ inputs.java_version }}-jre
+          
+          # Install native X11 libraries required for Java Swing/GUI rendering
+          RUN apt-get update && apt-get install -y \\
+              libxext6 \\
+              libxrender1 \\
+              libxtst6 \\
+              libxi6 \\
+              && rm -rf /var/lib/apt/lists/*
+              
           WORKDIR /app
           COPY ${BASENAME} /app/${BASENAME}
           ENTRYPOINT ["java","-jar","/app/${BASENAME}"]
           EOF
           fi
+
 
       - name: Prepare image tag
         run: |
