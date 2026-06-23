@@ -26,7 +26,7 @@ jobs:
       cache_dependencies: true
       headless_tests: true
       docker_build: true
-      docker_push: true
+      docker_push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       docker_registry: ''
       image_name: 'asikahameddevops10/sample-java-app'
       image_tag: '${{ github.sha }}'
