@@ -1,0 +1,34 @@
+# Caller workflow that invokes the reusable Java CI defined in ./.github/workflows/java-ci.yml
+# This caller assumes the reusable workflow is in the same repository under .github/workflows
+
+name: CI - call local Java CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - feature/**
+      - bugfix/**
+      - hotfix/**
+
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  call-central-workflow:
+    uses: ./.github/workflows/java-ci.yml
+    with:
+      build_tool: 'maven'
+      java_version: '11'
+      project_path: '.'
+      run_tests: true
+      cache_dependencies: true
+      headless_tests: true
+      docker_build: false
+      docker_push: false
+      docker_registry: ''
+      image_name: 'calculator'
+      image_tag: '${{ github.sha }}'
+      dockerfile_path: 'Dockerfile'
+      docker_context: '.'
