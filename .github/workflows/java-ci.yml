@@ -73,6 +73,18 @@ on:
         default: '.'
         type: string
 
+    secrets:
+      DOCKER_USERNAME:
+        description: 'Username for the container registry login'
+        required: true
+      DOCKER_PASSWORD:
+        description: 'Password or Token for the container registry login'
+        required: true
+
+
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Build (compile & package)
