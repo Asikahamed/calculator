@@ -33,7 +33,7 @@ jobs:
       dockerfile_path: 'Dockerfile'
       docker_context: '.'
     
-    # secrets: 
-    #   DOCKER_USERNAME: ${{ secrets.GHCR_USERNAME }}
-    #   DOCKER_PASSWORD: ${{ secrets.GHCR_TOKEN }}
+    secrets: 
+      DOCKER_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKER_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
 
