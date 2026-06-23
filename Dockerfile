@@ -1,8 +1,16 @@
 FROM eclipse-temurin:11-jre
+
+# Install native Linux X11 libraries required for Java Swing GUI components
+RUN apt-get update && apt-get install -y \
+    libxext6 \
+    libxrender1 \
+    libxtst6 \
+    libxi6 \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
-# The reusable workflow downloads the JAR into the context root as 'app-jar'
-# and renames it dynamically. We use a wildcard to grab it.
+# Point dynamically to the compiled application bundle package
 COPY *.jar app.jar
 
 ENTRYPOINT ["java", "-jar", "app.jar"]
