@@ -25,7 +25,7 @@ jobs:
       run_tests: true
       cache_dependencies: true
       headless_tests: true
-      docker_build: false
+      docker_build: true
       docker_push: false
       docker_registry: ''
       image_name: 'calculator'
