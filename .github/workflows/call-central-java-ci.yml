@@ -28,7 +28,7 @@ jobs:
       docker_build: true
       docker_push: true
       docker_registry: ''
-      image_name: 'asikahamed10/sample-java-app'
+      image_name: 'asikahameddevops10/sample-java-app'
       image_tag: '${{ github.sha }}'
       dockerfile_path: 'Dockerfile'
       docker_context: '.'
