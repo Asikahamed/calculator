@@ -1,0 +1,265 @@
+# Reusable Java CI workflow for Maven and Gradle projects (multi-job)
+# Put this file in a centralized repository under .github/workflows and call it
+# from application repositories using `uses:`. It can also be used locally by
+# callers in the same repository with `uses: ./.github/workflows/java-ci.yml`.
+name: "Java CI (reusable)"
+
+on:
+  workflow_call:
+    inputs:
+      build_tool:
+        description: 'Build tool to use: "maven" or "gradle"'
+        required: true
+        default: 'maven'
+        type: string
+      java_version:
+        description: 'Java major version (e.g. 11, 17)'
+        required: false
+        default: '11'
+        type: string
+      project_path:
+        description: 'Relative path to project directory (where pom.xml or build.gradle(.kts) lives)'
+        required: false
+        default: '.'
+        type: string
+      run_tests:
+        description: 'Run tests? true/false'
+        required: false
+        default: true
+        type: boolean
+      cache_dependencies:
+        description: 'Enable dependency caching? true/false'
+        required: false
+        default: true
+        type: boolean
+      headless_tests:
+        description: 'Run GUI tests in headless mode? true/false (uses Xvfb virtual frame buffer)'
+        required: false
+        default: true
+        type: boolean
+      docker_build:
+        description: 'Build a Docker image for the application? true/false'
+        required: false
+        default: false
+        type: boolean
+      docker_push:
+        description: 'Push the built Docker image to a registry? true/false (requires registry secrets)'
+        required: false
+        default: false
+        type: boolean
+      docker_registry:
+        description: 'Container registry host/namespace (optional, e.g. ghcr.io/myorg or docker.io/myorg). Leave empty to not prefix.'
+        required: false
+        default: ''
+        type: string
+      image_name:
+        description: 'Image name (repository) to use when building/pushing the image'
+        required: false
+        default: 'app'
+        type: string
+      image_tag:
+        description: 'Tag to use for the image (e.g. commit SHA or "latest")'
+        required: false
+        default: 'latest'
+        type: string
+      dockerfile_path:
+        description: 'Relative path to Dockerfile (inside project_path). If not present and docker_build=true, a simple Dockerfile will be generated.'
+        required: false
+        default: 'Dockerfile'
+        type: string
+      docker_context:
+        description: 'Context directory for docker build relative to project_path (defaults to project_path)'
+        required: false
+        default: '.'
+        type: string
+
+jobs:
+  build:
+    name: Build (compile & package)
+    runs-on: ubuntu-latest
+    outputs:
+      jar-artifact: ${{ steps.find-jar.outputs.artifact || '' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK Environment
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.java_version }}
+
+      - name: Cache Maven local repository
+        if: ${{ inputs.cache_dependencies == true && inputs.build_tool == 'maven' }}
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}-${{ inputs.java_version }}
+          restore-keys: ${{ runner.os }}-m2-
+
+      - name: Cache Gradle paths
+        if: ${{ inputs.cache_dependencies == true && inputs.build_tool == 'gradle' }}
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}-${{ inputs.java_version }}
+          restore-keys: ${{ runner.os }}-gradle-
+
+      - name: Build with Maven
+        if: ${{ inputs.build_tool == 'maven' }}
+        working-directory: ${{ inputs.project_path }}
+        run: |
+          set -euo pipefail
+          MVN='mvn -B -ntp'
+          
+          if [ "${{ inputs.run_tests }}" != 'true' ]; then
+            $MVN clean package -DskipTests
+          elif [ "${{ inputs.headless_tests }}" = 'true' ]; then
+            sudo apt-get update && sudo apt-get install -y xvfb
+            xvfb-run --auto-servernum $MVN clean package
+          else
+            $MVN clean package
+          fi
+
+      - name: Build with Gradle
+        if: ${{ inputs.build_tool == 'gradle' }}
+        working-directory: ${{ inputs.project_path }}
+        run: |
+          set -euo pipefail
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            GRADLE_CMD="./gradlew"
+          else
+            GRADLE_CMD="gradle"
+          fi
+          
+          if [ "${{ inputs.run_tests }}" != 'true' ]; then
+            $GRADLE_CMD clean assemble
+          elif [ "${{ inputs.headless_tests }}" = 'true' ]; then
+            sudo apt-get update && sudo apt-get install -y xvfb
+            xvfb-run --auto-servernum $GRADLE_CMD clean build
+          else
+            $GRADLE_CMD clean build
+          fi
+
+      - name: Find built JAR
+        id: find-jar
+        if: ${{ inputs.docker_build == true }}
+        run: |
+          set -euo pipefail
+          PP="$GITHUB_WORKSPACE/${{ inputs.project_path }}"
+          RAW_JAR=$(find "$PP" -type f -name "*.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" ! -name "*plain.jar" 2>/dev/null | head -n1 || true)
+          
+          if [ -n "$RAW_JAR" ]; then
+            # Clean up path by removing dots (./) and converting to absolute canonical path
+            CLEAN_JAR=$(readlink -f "$RAW_JAR")
+            echo "artifact=$CLEAN_JAR" >> $GITHUB_OUTPUT
+            echo "Found compiled artifact target: $CLEAN_JAR"
+          else
+            echo "artifact=" >> $GITHUB_OUTPUT
+            echo "No valid deployment JAR discovered."
+          fi
+
+
+      - name: Upload test reports
+        if: ${{ inputs.run_tests == true && always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            ${{ inputs.project_path }}/target/surefire-reports
+            ${{ inputs.project_path }}/build/test-results
+
+      - name: Upload JAR artifact for Docker
+        if: ${{ inputs.docker_build == true && steps.find-jar.outputs.artifact != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-jar
+          path: ${{ steps.find-jar.outputs.artifact }}
+
+  docker:
+    name: Docker build & push
+    runs-on: ubuntu-latest
+    needs: build
+    if: ${{ inputs.docker_build == true }}
+    steps:
+      - name: Checkout (to access repo files)
+        uses: actions/checkout@v4
+
+      - name: Download built JAR artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: app-jar
+          path: docker-context
+
+      - name: Ensure Dockerfile exists or generate simple one
+        run: |
+          set -euo pipefail
+          PP="$GITHUB_WORKSPACE/${{ inputs.project_path }}"
+          DF="$PP/${{ inputs.dockerfile_path }}"
+          CTX="$GITHUB_WORKSPACE/docker-context"
+          
+          mkdir -p "$CTX"
+          
+          if [ -f "$DF" ]; then
+            echo "Using existing repository Dockerfile: $DF"
+            cp "$DF" "$CTX/Dockerfile"
+          else
+            echo "Dockerfile not found at $DF. Constructing fallback configuration."
+            
+            # Read from downloaded folder context directly
+            JARFILE=$(find "$CTX" -name "*.jar" 2>/dev/null | head -n1 || true)
+            
+            if [ -z "$JARFILE" ]; then
+              echo "Error: Downloaded application JAR package is missing." >&2
+              exit 1
+            fi
+            
+            BASENAME=$(basename "$JARFILE")
+            
+            cat > "$CTX/Dockerfile" <<EOF
+          FROM eclipse-temurin:${{ inputs.java_version }}-jre
+          WORKDIR /app
+          COPY ${BASENAME} /app/${BASENAME}
+          ENTRYPOINT ["java","-jar","/app/${BASENAME}"]
+          EOF
+          fi
+
+      - name: Prepare image tag
+        run: |
+          REG='${{ inputs.docker_registry }}'
+          NAME='${{ inputs.image_name }}'
+          TAG='${{ inputs.image_tag }}'
+          if [ -z "$REG" ]; then
+            echo "IMAGE_TAG=$NAME:$TAG" >> $GITHUB_ENV
+          else
+            echo "IMAGE_TAG=$REG/$NAME:$TAG" >> $GITHUB_ENV
+          fi
+
+      - name: Login to registry (if pushing)
+        if: ${{ inputs.docker_push == true }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.docker_registry != '' && inputs.docker_registry || 'https://index.docker.io/v1/' }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and optionally push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: docker-context
+          file: docker-context/Dockerfile
+          push: ${{ inputs.docker_push }}
+          tags: ${{ env.IMAGE_TAG }}
+
+  finalize:
+    name: Finalize
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: always()
+    steps:
+      - name: Summary
+        run: |
+          echo "Build processing completed."
